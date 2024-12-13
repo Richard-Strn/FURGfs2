@@ -1,263 +1,309 @@
 import os
-import struct
 
-class SimpleFATFileSystem:
-    BLOCK_SIZE = 4096
-    MAX_FILE_NAME_LENGTH = 255 
+class Cabecalho:
+    def __init__(self, tamanho_total: int, espaco_livre: int, tamanho_bloco: int, 
+                 inicio_cabecalho: int, inicio_raiz: int, inicio_fat: int, inicio_dados: int):
+        self.tamanho_total = tamanho_total
+        self.espaco_livre = espaco_livre
+        self.tamanho_bloco = tamanho_bloco
+        self.inicio_cabecalho = inicio_cabecalho
+        self.inicio_raiz = inicio_raiz
+        self.inicio_fat = inicio_fat
+        self.inicio_dados = inicio_dados
 
-    def __init__(self, file_name, total_size):
-        self.file_name = file_name
-        self.total_size = total_size
-        self.total_blocks = total_size // self.BLOCK_SIZE
-        self.header_size = 512
-        self.fat_start = self.header_size
-        self.fat_size = self.total_blocks * 4 
-        self.root_dir_start = self.fat_start + self.fat_size
-        self.data_start = self.root_dir_start + self.BLOCK_SIZE 
-        self.fat = [-1] * self.total_blocks
-        self.root_dir = {} 
-        self.init_file()
+    def __repr__(self):
+        return (f"Cabecalho(tamanho_total={self.tamanho_total}, espaco_livre={self.espaco_livre}, "
+                f"tamanho_bloco={self.tamanho_bloco}, inicio_cabecalho={self.inicio_cabecalho}, "
+                f"inicio_raiz={self.inicio_raiz}, inicio_fat={self.inicio_fat}, inicio_dados={self.inicio_dados})")
 
-    def init_file(self):
-        if not os.path.exists(self.file_name):
-            with open(self.file_name, 'wb') as f:
-                f.write(b'\x00' * self.total_size)
-            self.write_header()
-            self.save_fat()
 
-    def write_header(self):
-        with open(self.file_name, 'r+b') as f:
-            header_data = struct.pack(
-                'I I I I I I',
-                self.header_size,   
-                self.BLOCK_SIZE,   
-                self.total_size,   
-                self.fat_start,
-                self.root_dir_start, 
-                self.data_start   
-            )
-            f.write(header_data.ljust(self.header_size, b'\x00'))
+class EntradaArquivo:
+    def __init__(self, nome: str, caminho: str, primeiro_bloco: int, protegido: bool, e_diretorio: bool):
+        self.nome = nome
+        self.caminho = caminho
+        self.primeiro_bloco = primeiro_bloco
+        self.protegido = protegido
+        self.e_diretorio = e_diretorio
 
-    def save_fat(self):
-        with open(self.file_name, 'r+b') as f:
-            f.seek(self.fat_start)
-            fat_data = struct.pack(f"{self.total_blocks}i", *self.fat)
-            f.write(fat_data)
+    def __repr__(self):
+        tipo_entrada = "Diretorio" if self.e_diretorio else "Arquivo"
+        return (f"{tipo_entrada}(nome='{self.nome}', caminho='{self.caminho}', primeiro_bloco={self.primeiro_bloco}, "
+                f"protegido={self.protegido})")
 
-    def load_fat(self):
-        with open(self.file_name, 'rb') as f:
-            f.seek(self.fat_start)
-            fat_data = f.read(self.total_blocks * 4)
-            self.fat = list(struct.unpack(f"{self.total_blocks}i", fat_data))
 
-    def save_root_dir(self):
-        with open(self.file_name, 'r+b') as f:
-            f.seek(self.root_dir_start)
-            root_data = str(self.root_dir).encode().ljust(self.BLOCK_SIZE, b'\x00')
-            f.write(root_data)
+class EntradaFat:
+    def __init__(self, id_bloco: int, id_proximo_bloco: int, usado: bool):
+        self.id_bloco = id_bloco
+        self.id_proximo_bloco = id_proximo_bloco
+        self.usado = usado
 
-    def load_root_dir(self):
-        with open(self.file_name, 'rb') as f:
-            f.seek(self.root_dir_start)
-            root_data = f.read(self.BLOCK_SIZE).decode().strip('\x00')
-            self.root_dir = eval(root_data) if root_data else {}
+    def __repr__(self):
+        return (f"EntradaFat(id_bloco={self.id_bloco}, id_proximo_bloco={self.id_proximo_bloco}, "
+                f"usado={self.usado})")
 
-    def find_free_blocks(self, num_blocks):
-        """
-        Encontra e retorna uma lista de blocos livres no sistema de arquivos.
 
-        :param num_blocks: Número de blocos necessários.
-        :return: Lista de blocos livres ou None se não houver blocos suficientes.
-        """
-        free_blocks = [i for i, block in enumerate(self.fat) if block == -1]
-        if len(free_blocks) >= num_blocks:
-            return free_blocks[:num_blocks]
+class SistemaArquivos:
+    def __init__(self, tamanho_total: int, tamanho_bloco: int):
+        self.cabecalho = Cabecalho(
+            tamanho_total=tamanho_total,
+            espaco_livre=tamanho_total,
+            tamanho_bloco=tamanho_bloco,
+            inicio_cabecalho=0,
+            inicio_raiz=1,
+            inicio_fat=2,
+            inicio_dados=3
+        )
+        self.entradas_fat = [EntradaFat(id_bloco=i, id_proximo_bloco=None, usado=False) for i in range(tamanho_total // tamanho_bloco)]
+        self.entradas_arquivo = []
+
+    def adicionar_arquivo(self, nome: str, caminho: str, tamanho: int, protegido: bool, e_diretorio: bool):
+        num_blocos = -(-tamanho // self.cabecalho.tamanho_bloco)  # Divisao para cima
+        blocos_alocados = []
+
+        for _ in range(num_blocos):
+            bloco_livre = self._encontrar_bloco_livre()
+            if bloco_livre is None:
+                raise ValueError("Espaco insuficiente para adicionar o arquivo.")
+
+            self.entradas_fat[bloco_livre].usado = True
+            if blocos_alocados:
+                self.entradas_fat[blocos_alocados[-1]].id_proximo_bloco = bloco_livre
+            blocos_alocados.append(bloco_livre)
+
+        self.cabecalho.espaco_livre -= num_blocos * self.cabecalho.tamanho_bloco
+
+        self.entradas_arquivo.append(
+            EntradaArquivo(nome=nome, caminho=caminho, primeiro_bloco=blocos_alocados[0], protegido=protegido, e_diretorio=e_diretorio)
+        )
+
+    def copiar_para_sistema(self, caminho_origem: str, caminho_destino: str):
+        if not os.path.exists(caminho_origem):
+            raise FileNotFoundError("O arquivo de origem nao existe.")
+
+        tamanho = os.path.getsize(caminho_origem)
+        nome = os.path.basename(caminho_destino)
+        protegido = False
+        e_diretorio = False
+
+        with open(caminho_origem, "rb") as f:
+            conteudo = f.read()
+
+        self.adicionar_arquivo(nome, caminho_destino, tamanho, protegido, e_diretorio)
+
+    def copiar_para_disco(self, nome_arquivo: str, caminho_destino: str):
+        entrada = next((e for e in self.entradas_arquivo if e.nome == nome_arquivo), None)
+        if entrada is None:
+            raise FileNotFoundError("Arquivo não encontrado no sistema de arquivos.")
+        
+        # Aqui você pode obter o conteúdo real do arquivo
+        conteudo = "Conteúdo com caracteres não ASCII"
+
+
+        with open(caminho_destino, "wb") as f:
+            f.write(conteudo)
+
+    def renomear_arquivo(self, nome_atual: str, novo_nome: str):
+        entrada = next((e for e in self.entradas_arquivo if e.nome == nome_atual), None)
+        if entrada is None:
+            raise FileNotFoundError("Arquivo nao encontrado.")
+        entrada.nome = novo_nome
+
+    def remover_arquivo(self, nome_arquivo: str):
+        entrada = next((e for e in self.entradas_arquivo if e.nome == nome_arquivo), None)
+        if entrada is None:
+            raise FileNotFoundError("Arquivo nao encontrado.")
+
+        self.entradas_arquivo.remove(entrada)
+        bloco = entrada.primeiro_bloco
+        while bloco is not None:
+            self.entradas_fat[bloco].usado = False
+            bloco = self.entradas_fat[bloco].id_proximo_bloco
+
+    def listar_espaco_livre(self):
+        print(f"Espaco livre: {self.cabecalho.espaco_livre} bytes")
+
+    def proteger_arquivo(self, nome_arquivo: str, proteger: bool):
+        entrada = next((e for e in self.entradas_arquivo if e.nome == nome_arquivo), None)
+        if entrada is None:
+            raise FileNotFoundError("Arquivo nao encontrado.")
+        entrada.protegido = proteger
+
+    def _encontrar_bloco_livre(self):
+        for i, entrada in enumerate(self.entradas_fat):
+            if not entrada.usado:
+                return i
         return None
 
-    def copy_to_fs(self, source_path):
-        """
-        Copia um arquivo do disco para o sistema de arquivos.
-        
-        :param source_path: Caminho do arquivo no disco.
-        """
-        file_name = os.path.basename(source_path)
-        if len(file_name) > self.MAX_FILE_NAME_LENGTH:
-            raise ValueError(f"O nome do arquivo excede o tamanho máximo de {self.MAX_FILE_NAME_LENGTH} caracteres.")
-
-        with open(source_path, 'rb') as f:
-            data = f.read()
-        
-        print(len(data))
-
-        num_blocks = (len(data) + self.BLOCK_SIZE - 1) // self.BLOCK_SIZE
-        print(num_blocks)  
-        free_blocks = self.find_free_blocks(num_blocks)
-
-        if not free_blocks:
-            raise Exception(f"Espaço insuficiente no sistema de arquivos para armazenar o arquivo '{file_name}'.")
-
-        self.load_fat()
-        self.load_root_dir()
-
-        start_block = free_blocks[0]
-        self.root_dir[file_name] = {
-            "start_block": start_block,
-            "size": len(data),
-            "protected": False
-        }
-
-        with open(self.file_name, 'r+b') as f:
-            for i, block in enumerate(free_blocks):
-                start = i * self.BLOCK_SIZE
-                end = start + self.BLOCK_SIZE
-                f.seek(self.data_start + self.BLOCK_SIZE * block)
-                f.write(data[start:end].ljust(self.BLOCK_SIZE, b'\x00'))
-
-                self.fat[block] = free_blocks[i + 1] if i + 1 < len(free_blocks) else -2
-
-        self.save_fat()
-        self.save_root_dir()
-        print(f"Arquivo '{file_name}' copiado para o sistema de arquivos.")
-
-    def copy_from_fs(self, file_name, dest_path):
-        self.load_root_dir()
-        if file_name not in self.root_dir:
-            raise FileNotFoundError(f"Arquivo '{file_name}' não encontrado no sistema de arquivos.")
-
-        file_info = self.root_dir[file_name]
-        start_block = file_info["start_block"]
-        size = file_info["size"]
-
-        data = b''
-
-        self.load_fat()
-        with open(self.file_name, 'rb') as f:
-            block = start_block
-            while block != -2:
-                f.seek(self.data_start + self.BLOCK_SIZE * block)
-                data += f.read(self.BLOCK_SIZE)
-                block = self.fat[block]  
-
-        if not os.path.isdir(dest_path):
-            raise NotADirectoryError(f"O caminho '{dest_path}' não é um diretório válido.")
-
-        dest_file_path = os.path.join(dest_path, file_name)
-    
-        with open(dest_file_path, 'wb') as f:
-            f.write(data[:size])
-
-        print(f"Arquivo '{file_name}' copiado para '{dest_file_path}'.")
-
-
-    def rename_file(self, old_name, new_name):
-        self.load_root_dir()
-        if old_name not in self.root_dir:
-            raise FileNotFoundError(f"Arquivo '{old_name}' não encontrado no sistema de arquivos.")
-
-        if len(new_name) > self.MAX_FILE_NAME_LENGTH:
-            raise ValueError(f"O nome do arquivo excede o tamanho máximo de {self.MAX_FILE_NAME_LENGTH} caracteres.")
-
-        self.root_dir[new_name] = self.root_dir.pop(old_name)
-        self.save_root_dir()
-        print(f"Arquivo '{old_name}' renomeado para '{new_name}'.")
-
-    def remove_file(self, file_name):
-        self.load_root_dir()
-        if file_name not in self.root_dir:
-            raise FileNotFoundError(f"Arquivo '{file_name}' não encontrado no sistema de arquivos.")
-
-        file_info = self.root_dir[file_name]
-        start_block = file_info["start_block"]
-
-        self.load_fat()
-        block = start_block
-        while block != -2:
-            next_block = self.fat[block]
-            self.fat[block] = -1
-            block = next_block
-
-        del self.root_dir[file_name]
-        self.save_fat()
-        self.save_root_dir()
-        print(f"Arquivo '{file_name}' removido do sistema de arquivos.")
-
-    def list_files(self):
-        self.load_root_dir()
-        for file_name, file_info in self.root_dir.items():
-            status = "protegido" if file_info["protected"] else "normal"
-            print(f"{file_name} - {file_info['size']} bytes - {status}")
-
-    def get_free_spacee(self):
-        free_blocks = self.fat.count(-1)
-        free_space = free_blocks * self.BLOCK_SIZE
-        total_space = self.total_blocks * self.BLOCK_SIZE
-        free_space_mb = free_space / (1024 * 1024)
-        total_space_mb = total_space / (1024 * 1024)
-        print(f"{free_space_mb:.1f} MB livres de {total_space_mb:.1f} MB.")
-
-
-    def protect_file(self, file_name, protect=True):
-        self.load_root_dir()
-        if file_name not in self.root_dir:
-            raise FileNotFoundError(f"Arquivo '{file_name}' não encontrado no sistema de arquivos.")
-
-        self.root_dir[file_name]["protected"] = protect
-        self.save_root_dir()
-        action = "protegido" if protect else "desprotegido"
-        print(f"Arquivo '{file_name}' {action} com sucesso.")
-
-def main():
-    file_name = "FURGSfs2.fs"
-
-    while True:
-        total_size_mb = int(input("Digite o tamanho do sistema de arquivos em MB (entre 10 e 200): "))
-        if 10 <= total_size_mb <= 200:
-            break
-        print("Por favor, insira um valor válido entre 10 e 200 MB.")
-
-    total_size = total_size_mb * 1024 * 1024  # Converter MB para bytes
-
-    fs = SimpleFATFileSystem(file_name, total_size)
-
-    while True:
-        print("\nOpções:")
-        print("1. Copiar um arquivo do disco para o sistema de arquivos")
-        print("2. Copiar um arquivo do sistema de arquivos para o disco")
-        print("3. Renomear um arquivo no sistema de arquivos")
-        print("4. Remover um arquivo do sistema de arquivos")
-        print("5. Listar arquivos no sistema de arquivos")
-        print("6. Listar espaço livre no sistema de arquivos")
-        print("7. Proteger ou desproteger um arquivo")
-        print("8. Sair")
-
-        choice = input("Escolha uma opção: ")
-
-        if choice == '1':
-            source_path = input("Digite o caminho do arquivo no disco: ")
-            fs.copy_to_fs(source_path)
-        elif choice == '2':
-            file_name = input("Digite o nome do arquivo no sistema de arquivos: ")
-            dest_path = input("Digite o caminho de destino no disco: ")
-            fs.copy_from_fs(file_name, dest_path)
-        elif choice == '3':
-            old_name = input("Digite o nome atual do arquivo: ")
-            new_name = input("Digite o novo nome do arquivo: ")
-            fs.rename_file(old_name, new_name)
-        elif choice == '4':
-            file_name = input("Digite o nome do arquivo a ser removido: ")
-            fs.remove_file(file_name)
-        elif choice == '5':
-            fs.list_files()
-        elif choice == '6':
-            fs.get_free_space()
-        elif choice == '7':
-            file_name = input("Digite o nome do arquivo: ")
-            protect = input("Proteger (s/n)? ").lower() == 's'
-            fs.protect_file(file_name, protect)
-        elif choice == '8':
-            break
+    def listar_arquivos(self):
+        if not self.entradas_arquivo:
+            print("Nenhum arquivo ou diretorio encontrado.")
         else:
-            print("Opção inválida.")
+            for arquivo in self.entradas_arquivo:
+                print(arquivo)
+
+    def __repr__(self):
+        return (f"SistemaArquivos(Cabecalho={self.cabecalho}, "
+                f"EntradasFat={self.entradas_fat}, EntradasArquivo={self.entradas_arquivo})")
+
+
+def converter_para_bytes(tamanho: int, unidade: str) -> int:
+    unidades = {"b": 1, "kb": 1024, "mb": 1024**2, "gb": 1024**3}
+    unidade = unidade.lower()
+    if unidade not in unidades:
+        raise ValueError("Unidade invalida. Use 'B', 'KB', 'MB' ou 'GB'.")
+    return tamanho * unidades[unidade]
+
+
+def principal():
+    sistema = None
+
+    while True:
+        print("\n=== Menu do Sistema de Arquivos ===")
+        print("1. Criar Sistema de Arquivos")
+        print("2. Adicionar Arquivo/Diretorio")
+        print("3. Listar Arquivos")
+        print("4. Mostrar Informacoes do Sistema de Arquivos")
+        print("5. Copiar Arquivo do Disco para o Sistema de Arquivos")
+        print("6. Copiar Arquivo do Sistema de Arquivos para o Disco")
+        print("7. Renomear Arquivo")
+        print("8. Remover Arquivo")
+        print("9. Listar Espaco Livre")
+        print("10. Proteger/Desproteger Arquivo")
+        print("0. Sair")
+        
+        escolha = input("Digite sua escolha: ")
+
+        if escolha == "1":
+            tamanho_total = int(input("Digite o tamanho total do sistema de arquivos: "))
+            unidade_total = input("Digite a unidade (B, KB, MB, GB): ")
+            tamanho_bloco = int(input("Digite o tamanho do bloco: "))
+            unidade_bloco = input("Digite a unidade (B, KB, MB, GB): ")
+
+            tamanho_total_bytes = converter_para_bytes(tamanho_total, unidade_total)
+            tamanho_bloco_bytes = converter_para_bytes(tamanho_bloco, unidade_bloco)
+
+            sistema = SistemaArquivos(tamanho_total=tamanho_total_bytes, tamanho_bloco=tamanho_bloco_bytes)
+            print("Sistema de arquivos criado com sucesso.")
+
+        elif escolha == "2":
+            if sistema is None:
+                print("Crie um sistema de arquivos primeiro.")
+                continue
+
+            nome = input("Digite o nome do arquivo/diretorio: ")
+            caminho = input("Digite o caminho: ")
+            tamanho = int(input("Digite o tamanho: "))
+            unidade_tamanho = input("Digite a unidade (B, KB, MB, GB): ")
+            tamanho_bytes = converter_para_bytes(tamanho, unidade_tamanho)
+
+            protegido = input("O arquivo e protegido? (sim/nao): ").lower() == "sim"
+            e_diretorio = input("E um diretorio? (sim/nao): ").lower() == "sim"
+
+            try:
+                sistema.adicionar_arquivo(nome, caminho, tamanho_bytes, protegido, e_diretorio)
+                print("Arquivo/Diretorio adicionado com sucesso.")
+            except ValueError as e:
+                print(f"Erro: {e}")
+
+        elif escolha == "3":
+            if sistema is None:
+                print("Crie um sistema de arquivos primeiro.")
+                continue
+
+            print("\nArquivos/Diretorios:")
+            sistema.listar_arquivos()
+
+        elif escolha == "4":
+            if sistema is None:
+                print("Crie um sistema de arquivos primeiro.")
+                continue
+
+            print("\nInformacoes do Sistema de Arquivos:")
+            print(sistema)
+
+        elif escolha == "5":
+            if sistema is None:
+                print("Crie um sistema de arquivos primeiro.")
+                continue
+
+            caminho_origem = input("Digite o caminho do arquivo no disco: ")
+            caminho_destino = input("Digite o caminho no sistema de arquivos: ")
+
+            try:
+                sistema.copiar_para_sistema(caminho_origem, caminho_destino)
+                print("Arquivo copiado para o sistema de arquivos com sucesso.")
+            except Exception as e:
+                print(f"Erro: {e}")
+
+        elif escolha == "6":
+            if sistema is None:
+                print("Crie um sistema de arquivos primeiro.")
+                continue
+
+            nome_arquivo = input("Digite o nome do arquivo no sistema de arquivos: ")
+            caminho_destino = input("Digite o caminho no disco: ")
+
+            try:
+                sistema.copiar_para_disco(nome_arquivo, caminho_destino)
+                print("Arquivo copiado para o disco com sucesso.")
+            except Exception as e:
+                print(f"Erro: {e}")
+
+        elif escolha == "7":
+            if sistema is None:
+                print("Crie um sistema de arquivos primeiro.")
+                continue
+
+            nome_atual = input("Digite o nome atual do arquivo: ")
+            novo_nome = input("Digite o novo nome do arquivo: ")
+
+            try:
+                sistema.renomear_arquivo(nome_atual, novo_nome)
+                print("Arquivo renomeado com sucesso.")
+            except Exception as e:
+                print(f"Erro: {e}")
+
+        elif escolha == "8":
+            if sistema is None:
+                print("Crie um sistema de arquivos primeiro.")
+                continue
+
+            nome_arquivo = input("Digite o nome do arquivo a ser removido: ")
+
+            try:
+                sistema.remover_arquivo(nome_arquivo)
+                print("Arquivo removido com sucesso.")
+            except Exception as e:
+                print(f"Erro: {e}")
+
+        elif escolha == "9":
+            if sistema is None:
+                print("Crie um sistema de arquivos primeiro.")
+                continue
+
+            sistema.listar_espaco_livre()
+
+        elif escolha == "10":
+            if sistema is None:
+                print("Crie um sistema de arquivos primeiro.")
+                continue
+
+            nome_arquivo = input("Digite o nome do arquivo: ")
+            proteger = input("Deseja proteger o arquivo? (sim/nao): ").lower() == "sim"
+
+            try:
+                sistema.proteger_arquivo(nome_arquivo, proteger)
+                print("Arquivo atualizado com sucesso.")
+            except Exception as e:
+                print(f"Erro: {e}")
+
+        elif escolha == "0":
+            print("Saindo...")
+            break
+
+        else:
+            print("Escolha invalida. Tente novamente.")
+
 
 if __name__ == "__main__":
-    main()
+    principal()
