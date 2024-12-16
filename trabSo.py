@@ -69,26 +69,15 @@ class FURGfs2:
             self.root = eval(dadosRoot) if dadosRoot else {}
 
     def acharBlocosDisponiveis(self, blocosNecessarios):
-        """
-        Encontra e retorna uma lista de blocos livres no sistema de arquivos.
-
-        :param blocosNecessarios: Número de blocos necessários.
-        :return: Lista de blocos livres ou None se não houver blocos suficientes.
-        """
         blocosDisponiveis = [i for i, bloco in enumerate(self.fat) if bloco == -1]
         if len(blocosDisponiveis) >= blocosNecessarios:
             return blocosDisponiveis[:blocosNecessarios]
         return None
 
     def copiarArquivoDiscoSistema(self, enderecoArquivoDisco):
-        """
-        Copia um arquivo do disco para o sistema de arquivos.
-        
-        :param source_path: Caminho do arquivo no disco.
-        """
         nomeArquivoDisco = os.path.basename(enderecoArquivoDisco)
         if len(nomeArquivoDisco) > self.tamanhoMaximoNomeArquivo:
-            raise ValueError(f"O nome do arquivo excede o tamanho máximo de {self.tamanhoMaximoNomeArquivo} caracteres.")
+            raise ValueError(f"O nome do arquivo é maior que o tamanho máximo permitido de {self.tamanhoMaximoNomeArquivo}.")
 
         with open(enderecoArquivoDisco, 'rb') as sistemaArquivos:
             arquivoDisco = sistemaArquivos.read()
@@ -100,7 +89,7 @@ class FURGfs2:
         blocosDisponiveis = self.acharBlocosDisponiveis(blocosNecessarios)
 
         if not blocosDisponiveis:
-            raise Exception(f"Espaço insuficiente no sistema de arquivos para armazenar o arquivo '{nomeArquivoDisco}'.")
+            raise Exception("Não há espaço disponível.")
 
         self.carregarFat()
         self.carregarRoot()
@@ -123,12 +112,12 @@ class FURGfs2:
 
         self.salvarFat()
         self.salvarRoot()
-        print(f"Arquivo '{nomeArquivoDisco}' copiado para o sistema de arquivos.")
+        print(f"{nomeArquivoDisco}' copiado para o FURGfs2.")
 
     def copiarArquivoSistemaDisco(self, nomeArquivoSistema, enderecoDestino):
         self.carregarRoot()
         if nomeArquivoSistema not in self.root:
-            raise FileNotFoundError(f"Arquivo '{nomeArquivoSistema}' não encontrado no sistema de arquivos.")
+            raise FileNotFoundError(f"Arquivo '{nomeArquivoSistema}' não encontrado no FURGfs2.")
 
         dadosArquivoSistema = self.root[nomeArquivoSistema]
         inicioBloco = dadosArquivoSistema["inicioBloco"]
@@ -145,32 +134,32 @@ class FURGfs2:
                 bloco = self.fat[bloco]  
 
         if not os.path.isdir(enderecoDestino):
-            raise NotADirectoryError(f"O caminho '{enderecoDestino}' não é um diretório válido.")
+            raise NotADirectoryError(f"Não é um endereço válido.")
 
         enderecoArquivoDisco = os.path.join(enderecoDestino, nomeArquivoSistema)
     
         with open(enderecoArquivoDisco, 'wb') as sistemaArquivos:
             sistemaArquivos.write(data[:tamanho])
 
-        print(f"Arquivo '{nomeArquivoSistema}' copiado para '{enderecoArquivoDisco}'.")
+        print(f"{nomeArquivoSistema}' copiado para '{enderecoArquivoDisco}'.")
 
 
     def renomearArquivo(self, nomeAntigo, nomeNovo):
         self.carregarRoot()
         if nomeAntigo not in self.root:
-            raise FileNotFoundError(f"Arquivo '{nomeAntigo}' não encontrado no sistema de arquivos.")
+            raise FileNotFoundError(f"{nomeAntigo}' não existe.")
 
         if len(nomeNovo) > self.tamanhoMaximoNomeArquivo:
-            raise ValueError(f"O nome do arquivo excede o tamanho máximo de {self.tamanhoMaximoNomeArquivo} caracteres.")
+            raise ValueError(f"O nome do arquivo é maior que o tamanho máximo permitido de {self.tamanhoMaximoNomeArquivo}.")
 
         self.root[nomeNovo] = self.root.pop(nomeAntigo)
         self.salvarRoot()
-        print(f"Arquivo '{nomeAntigo}' renomeado para '{nomeNovo}'.")
+        print(f"{nomeAntigo}' renomeado para '{nomeNovo}'.")
 
     def deletarArquivo(self, nomeArquivoSistema):
         self.carregarRoot()
         if nomeArquivoSistema not in self.root:
-            raise FileNotFoundError(f"Arquivo '{nomeArquivoSistema}' não encontrado no sistema de arquivos.")
+            raise FileNotFoundError(f"{nomeArquivoSistema}' não existe.")
 
         dadosArquivoSistema = self.root[nomeArquivoSistema]
         inicioBloco = dadosArquivoSistema["inicioBloco"]
@@ -185,7 +174,7 @@ class FURGfs2:
         del self.root[nomeArquivoSistema]
         self.salvarFat()
         self.salvarRoot()
-        print(f"Arquivo '{nomeArquivoSistema}' removido do sistema de arquivos.")
+        print(f"{nomeArquivoSistema}' removido do FURGfs2.")
 
     def informarArquivosSistema(self):
         self.carregarRoot()
@@ -205,7 +194,7 @@ class FURGfs2:
     def protegerArquivo(self, nomeArquivoSistema, protegido=True):
         self.carregarRoot()
         if nomeArquivoSistema not in self.root:
-            raise FileNotFoundError(f"Arquivo '{nomeArquivoSistema}' não encontrado no sistema de arquivos.")
+            raise FileNotFoundError(f"{nomeArquivoSistema}' não existe.")
 
         self.root[nomeArquivoSistema]["protegido"] = protegido
         self.salvarRoot()
@@ -214,48 +203,48 @@ class FURGfs2:
 
 def main():
     while True:
-        tamanhoTotalMb = int(input("Digite o tamanho do sistema de arquivos em MB (entre 10 e 200): "))
+        tamanhoTotalMb = int(input("Digite o tamanho do FURGfs2 em MB. (entre 10 e 200MB): "))
         if 10 <= tamanhoTotalMb <= 200:
             break
-        print("Por favor, insira um valor válido entre 10 e 200 MB.")
+        print("Digite um tamanho válido. (entre 10 e 200MB).")
 
     tamanhoTotal = tamanhoTotalMb * 1024 * 1024  # Converter MB para bytes
 
     sistemaArquivos = FURGfs2(tamanhoTotal)
 
     while True:
-        print("\nOpções:")
-        print("1. Copiar um arquivo do disco para o sistema de arquivos")
-        print("2. Copiar um arquivo do sistema de arquivos para o disco")
-        print("3. Renomear um arquivo no sistema de arquivos")
-        print("4. Remover um arquivo do sistema de arquivos")
-        print("5. Listar arquivos no sistema de arquivos")
-        print("6. Listar espaço livre no sistema de arquivos")
-        print("7. Proteger ou desproteger um arquivo")
+        print("\nOpções: ")
+        print("1. Copiar um arquivo do disco para o FURGfs2.")
+        print("2. Copiar um arquivo do FURGfs2 para o disco.")
+        print("3. Renomear um arquivo no FURGfs2.")
+        print("4. Remover um arquivo do FURGfs2.")
+        print("5. Listar arquivos presents no FURGfs2.")
+        print("6. Listar espaço livre no FURGfs2.")
+        print("7. Proteger ou desproteger um arquivo no FURGfs2.")
         print("8. Sair")
 
         opcao = input("Escolha uma opção: ")
 
         if opcao == '1':
-            enderecoArquivoDisco = input("Digite o caminho do arquivo no disco: ")
+            enderecoArquivoDisco = input("Digite o endereço do arquivo no disco: ")
             sistemaArquivos.copiarArquivoDiscoSistema(enderecoArquivoDisco)
         elif opcao == '2':
-            nomeArquivoDisco = input("Digite o nome do arquivo no sistema de arquivos: ")
-            enderecoDestino = input("Digite o caminho de destino no disco: ")
+            nomeArquivoDisco = input("Digite o nome do arquivo presente no FURGfs2: ")
+            enderecoDestino = input("Digite o endereço de destino no disco: ")
             sistemaArquivos.copiarArquivoSistemaDisco(nomeArquivoDisco, enderecoDestino)
         elif opcao == '3':
-            nomeAntigo = input("Digite o nome atual do arquivo: ")
+            nomeAntigo = input("Digite o nome atual do arquivo presente no FURGfs2 que deseja renomear: ")
             nomeNovo = input("Digite o novo nome do arquivo: ")
             sistemaArquivos.renomearArquivo(nomeAntigo, nomeNovo)
         elif opcao == '4':
-            nomeArquivoSistema = input("Digite o nome do arquivo a ser removido: ")
+            nomeArquivoSistema = input("Digite o nome do arquivo presente no FURGfs2 que deseja excluir: ")
             sistemaArquivos.deletarArquivo(nomeArquivoSistema)
         elif opcao == '5':
             sistemaArquivos.informarArquivosSistema()
         elif opcao == '6':
             sistemaArquivos.informarEspacoDisponivel()
         elif opcao == '7':
-            nomeArquivoSistema = input("Digite o nome do arquivo: ")
+            nomeArquivoSistema = input("Digite o nome do arquivo presente no FURGfs2: ")
             protegido = input("Proteger (s/n)? ").lower() == 's'
             sistemaArquivos.protegerArquivo(nomeArquivoSistema, protegido)
         elif opcao == '8':
