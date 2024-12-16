@@ -24,6 +24,12 @@ class FURGfs2:
                 sistemaArquivos.write(b'\x00' * self.tamanhoTotal)
             self.escreverCabecalho()
             self.salvarFat()
+        else:
+            os.remove(self.nomeSistemaArquivos)
+            with open(self.nomeSistemaArquivos, 'wb') as sistemaArquivos:
+                sistemaArquivos.write(b'\x00' * self.tamanhoTotal)
+            self.escreverCabecalho()
+            self.salvarFat()
 
     def escreverCabecalho(self):
         with open(self.nomeSistemaArquivos, 'r+b') as sistemaArquivos:
