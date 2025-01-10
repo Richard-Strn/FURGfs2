@@ -2,7 +2,7 @@ import os
 import struct
 
 class FURGfs2Init:
-  # Inicializando o FURGfs21
+  # Inicializando o FURGfs2
     def __init__(self, tamanhoTotal):
         self.nomeSistemaArquivos = "FURGSfs2.fs"
         self.tamanhoBloco = 4096

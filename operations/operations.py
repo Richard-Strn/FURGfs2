@@ -76,7 +76,6 @@ class FURGfs2FileOperations:
 
         print(f"{nomeArquivoSistema}' copiado para '{enderecoArquivoDisco}'.")
 
-
     # Carrega o nome do arquivo no ROOT e atualiza o mesmo
     def renomearArquivo(self, nomeAntigo, nomeNovo):
         self.carregarRoot()
@@ -96,7 +95,7 @@ class FURGfs2FileOperations:
         self.salvarRoot()
         print(f"{nomeAntigo}' renomeado para '{nomeNovo}'.")
 
-
+    # Carrega os dados do arquivo no ROOT, atualiza os blocos do arquivo na FAT como livres e tira os dados do arquivo do ROOT 
     def deletarArquivo(self, nomeArquivoSistema):
         self.carregarRoot()
         if nomeArquivoSistema not in self.root:
@@ -123,12 +122,10 @@ class FURGfs2FileOperations:
         self.salvarFat()
         self.salvarRoot()
         print(f"Arquivo '{nomeArquivoSistema}' foi removido do FURGfs2.")
-
-
-     # Pega todos os arquivos que existem no ROOT e exibe seus nomes
+    
+    # Pega todos os arquivos que existem no ROOT e exibe seus nomes
     def informarArquivosSistema(self):
         self.carregarRoot()
         for nomeArquivoSistema, dadosArquivoSistema in self.root.items():
             status = "protegido" if dadosArquivoSistema["protegido"] else "normal"
             print(f"{nomeArquivoSistema} - {dadosArquivoSistema['tamanho']} bytes - {status}")
-

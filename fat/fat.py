@@ -7,8 +7,8 @@ class FURGfs2Fat:
             sistemaArquivos.seek(self.inicioFat)
             dadosFat = struct.pack(f"{self.qtdTotalBlocos}i", *self.fat)
             sistemaArquivos.write(dadosFat)
-
-     # Pega a FAT do FURGfs2 e carrega na memória
+    
+    # Pega a FAT do FURGfs2 e carrega na memória
     def carregarFat(self):
         with open(self.nomeSistemaArquivos, 'rb') as sistemaArquivos:
             sistemaArquivos.seek(self.inicioFat)
